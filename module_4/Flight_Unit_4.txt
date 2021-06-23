@@ -1,0 +1,460 @@
+/*
+Данный файл содержит SQL запросы для блоков 4, 5 проекта №4, а также
+SQL запрос, формирующий исходный датасет для дальнейшего анализа.
+Для некоторых задач сделано несколько решений для упражнения и экспериментов.
+Здесь используются ключевые слова, как:
+Task - номер задачи;
+Statement - постановка задачи;
+SQL №x - x вариант решения задачи;
+Method - краткое описание подхода для решения;
+Result - результаты запроса.
+*/
+
+
+/*
+Task 4.1.1
+Statement: База данных содержит список аэропортов практически всех rрупных городов России.
+В большинстве городов есть только один аэропорт. Исключение составляет:
+*/
+/*
+SQL №1
+Method: Простой запрос на группировку данных
+*/
+SELECT a.city,
+       count(a.airport_name)
+FROM dst_project.airports a
+GROUP BY 1
+HAVING count(DISTINCT a.airport_code) > 1
+--Result: Moscow, Ulyanovsk
+------------------------------------------------
+
+/*
+Task 4.2.1
+Statement: Таблица рейсов содержит всю информацию о прошлых, текущих и запланированных рейсах.
+Сколько всего статусов для рейсов определено в таблице?
+*/
+/*
+SQL №1
+Method: Запрос с использованием UNION
+*/
+SELECT f.status AS status_type,
+       '' AS value
+FROM dst_project.flights f
+GROUP BY 1
+UNION
+SELECT 'total_amount:',
+       count(DISTINCT f.status)::text
+FROM dst_project.flights f
+ORDER BY 2
+--Result: Список всех статусов, в последней строке полное их количество - 6
+
+/*
+SQL №2
+Method: Простой запрос на типы статуса
+*/
+SELECT count(DISTINCT f.status)
+FROM dst_project.flights f
+--Result: 6
+------------------------------------------------
+
+/*
+Task 4.2.2
+Statement: Какое количество самолетов находятся в воздухе на момент среза в базе
+(статус рейса «самолёт уже вылетел и находится в воздухе»)?
+*/
+/*
+SQL №1
+Method: Обращаем внимание на Departed
+*/
+SELECT count(f.status)
+FROM dst_project.flights AS f
+WHERE f.status = 'Departed'
+--Result: 58
+
+/*
+SQL №2
+Method: Совмещение условий actual_departure IS NOT NULL и actual_arrival IS NULL
+*/
+SELECT count(f.status)
+FROM dst_project.flights AS f
+WHERE f.actual_departure IS NOT NULL
+  AND f.actual_arrival IS NULL
+--Result: 58
+------------------------------------------------
+
+/*
+Task 4.2.3
+Statement: Места определяют схему салона каждой модели. Сколько мест имеет самолет модели 773 (Boeing 777-300)?
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT count(s.seat_no)
+FROM dst_project.seats AS s
+WHERE s.aircraft_code = '773'
+--Result: 402
+
+/*
+SQL №2
+Method: Вывод типов ВС и их количество пассажиров
+*/
+SELECT s.aircraft_code,
+       a.model,
+       count(s.seat_no) AS seat_count
+FROM dst_project.seats AS s
+JOIN dst_project.aircrafts AS a ON s.aircraft_code = a.aircraft_code
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT 1
+--Result: Строчка с типом ВС и количеством мест - 402
+------------------------------------------------
+
+/*
+Task 4.2.4
+Statement: Сколько состоявшихся (фактических) рейсов было совершено между 1 апреля 2017 года и 1 сентября 2017 года?
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT count(*) AS f_count
+FROM dst_project.flights AS f
+WHERE f.status = 'Arrived'
+  AND f.actual_arrival BETWEEN '2017-04-01' AND '2017-09-01'
+--Result: 74227
+------------------------------------------------	
+
+/*
+Task 4.3.1
+Statement: Сколько всего рейсов было отменено по данным базы?
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT count(*) AS c_count
+FROM dst_project.flights AS f
+WHERE f.status = 'Cancelled'
+--Result: 437
+
+/*
+SQL №2
+Method: Простой запрос на создание таблицы для каждого статуса
+*/	
+SELECT f.status,
+       count(*) AS f_count
+FROM dst_project.flights AS f
+GROUP BY 1
+ORDER BY 2 DESC
+--Result: Таблица всех статусов с их количеством, выбираем отменённые - 437
+------------------------------------------------	
+		
+/*
+Task 4.3.2
+Statement: Сколько самолетов моделей типа Boeing, Sukhoi Superjet, Airbus находится в базе авиаперевозок?
+*/
+/*
+SQL №1
+Method: Запрос с использованием UNION
+*/
+SELECT 'Boeing' AS model,
+       count(a.model)
+FROM dst_project.aircrafts AS a
+WHERE a.model like 'Boe%'
+UNION
+SELECT 'Airbus' AS model,
+       count(a.model)
+FROM dst_project.aircrafts AS a
+WHERE a.model like 'Air%'
+UNION
+SELECT 'Sukhoi' AS model,
+       count(a.model)
+FROM dst_project.aircrafts AS a
+WHERE a.model like 'Su%'
+ORDER BY 1		
+--Result: Boeing = 3, Airbus = 3, Sukhoi = 1
+------------------------------------------------
+
+/*
+Task 4.3.3
+Statement: В какой части (частях) света находится больше аэропортов?
+*/
+/*
+SQL №1
+Method: Запрос с использованием CASE
+*/
+SELECT CASE
+           WHEN a.timezone like 'As%' THEN 'Asia'
+           WHEN a.timezone like 'Eu%' THEN 'Europe'
+           ELSE 'others'
+       END AS timezone,
+       count(*)
+FROM dst_project.airports AS a
+GROUP BY 1
+--Result: Europe, Asia
+------------------------------------------------
+
+/*
+Task 4.3.4
+Statement: У какого рейса была самая большая задержка прибытия за все время сбора данных? Введите id рейса (flight_id).
+*/
+/*
+SQL №1
+Method: Запрос с использованием CASE
+*/
+SELECT f.flight_id,
+       max(f.actual_arrival - f.scheduled_arrival) AS flight_delay
+FROM dst_project.flights AS f
+WHERE f.status = 'Arrived'
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1		
+--Result: 157571
+------------------------------------------------
+
+/*
+Task 4.4.1
+Statement: Когда был запланирован самый первый вылет, сохраненный в базе данных?
+*/
+/*
+SQL №1
+Method: Простой вопрос на группировку
+*/
+SELECT f.scheduled_departure
+FROM dst_project.flights AS f
+ORDER BY 1
+LIMIT 1
+--Result: August 14, 2016, 11:45 PM
+------------------------------------------------
+		
+/*
+Task 4.4.2
+Statement: Сколько минут составляет запланированное время полета в самом длительном рейсе?
+*/
+/*
+SQL №1
+Method: Применение подзапроса и date_part
+*/
+WITH fl AS
+  (SELECT f.scheduled_arrival - f.scheduled_departure AS dur
+   FROM dst_project.flights AS f)
+SELECT max(date_part('hour', fl.dur)*60 + date_part('minute', fl.dur)) AS max_flight_time
+FROM fl
+--Result: 530
+
+/*
+SQL №2
+Method: Применение date_part
+*/
+SELECT date_part('hour', max(f.scheduled_arrival - f.scheduled_departure))*60 + 
+	   date_part('minute', max(f.scheduled_arrival - f.scheduled_departure)) AS max_flight_time
+FROM dst_project.flights AS f
+--Result: 530
+------------------------------------------------		
+
+/*
+Task 4.4.3
+Statement: Между какими аэропортами пролегает самый длительный по времени запланированный рейс?
+*/
+/*
+SQL №1
+Method: Простой запрос на группировку
+*/
+SELECT f.departure_airport AS dep,
+       f.arrival_airport AS arr,
+       f.scheduled_arrival - f.scheduled_departure AS flight_duration
+FROM dst_project.flights AS f
+ORDER BY 3 DESC
+LIMIT 1
+--Result: DME-UUS
+------------------------------------------------
+	
+/*
+Task 4.4.4
+Statement: Сколько составляет средняя дальность полета среди всех самолетов в минутах? Секунды
+округляются в меньшую сторону (отбрасываются до минут). 
+*/
+/*
+SQL №1
+Method: Используем подзапросы
+*/
+WITH av_duration AS
+  (SELECT avg(f.actual_arrival - f.actual_departure) AS af
+   FROM dst_project.flights AS f
+   WHERE f.actual_arrival IS NOT NULL
+     AND f.actual_departure IS NOT NULL ),
+     mean_tot AS
+  (SELECT date_trunc('minute', avg(a.af)) AS mt
+   FROM av_duration AS a)
+SELECT mtot.mt AS mean_duration,
+       (date_part('hour', mtot.mt)*60 + date_part('minute', mtot.mt)) AS minutes
+FROM mean_tot AS mtot
+--Result: 128
+------------------------------------------------	
+
+/*
+Task 4.5.1
+Statement: Мест какого класса у SU9 больше всего? 
+*/
+/*
+SQL №1
+Method: Простой запрос на группировку по двум полям
+*/
+SELECT s.aircraft_code,
+       s.fare_conditions,
+       count(s.fare_conditions) AS seat_count
+FROM dst_project.seats AS s
+WHERE s.aircraft_code = 'SU9'
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT 1
+--Result: Economy
+------------------------------------------------
+
+/*
+Task 4.5.2
+Statement: Какую самую минимальную стоимость составило бронирование за всю историю?
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT min(b.total_amount)
+FROM dst_project.bookings AS b
+--Result: 3400
+------------------------------------------------
+
+/*
+Task 4.5.3
+Statement: Какой номер места был у пассажира с id = 4313 788533?
+*/
+/*
+SQL №1
+Method: Запрос на иннер объединение таблиц
+*/
+SELECT t.passenger_id,
+       bp.seat_no
+FROM dst_project.tickets AS t
+JOIN dst_project.boarding_passes AS bp ON t.ticket_no = bp.ticket_no
+WHERE t.passenger_id = '4313 788533'
+--Result: 2A (у окна и похоже бизнес класс..)
+------------------------------------------------
+
+/*
+Task 5.1.1
+Statement: Анапа — курортный город на юге России. Сколько рейсов прибыло в Анапу за 2017 год?
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT count(*)
+FROM dst_project.flights AS f
+WHERE f.arrival_airport = 'AAQ'
+  AND f.actual_arrival BETWEEN '2017-01-01' AND '2017-12-31'
+--Result: 486
+------------------------------------------------
+
+/*
+Task 5.1.2
+Statement: Сколько рейсов из Анапы вылетело зимой 2017 года?
+*/
+/*
+SQL №1
+Method: Простой запрос, не забыть про декабрь
+*/
+SELECT count(*)
+FROM dst_project.flights AS f
+WHERE f.departure_airport = 'AAQ'
+  AND date_trunc('month', f.actual_departure) IN ('2017-01-01', '2017-02-01', '2017-12-01')
+  AND status = 'Arrived'
+--Result: 127
+------------------------------------------------
+
+/*
+Task 5.1.3
+Statement: Посчитайте количество отмененных рейсов из Анапы за все время.
+*/
+/*
+SQL №1
+Method: Простой запрос
+*/
+SELECT count(*)
+FROM dst_project.flights AS f
+WHERE f.departure_airport = 'AAQ' AND status = 'Cancelled'
+--Result: 1
+------------------------------------------------
+
+/*
+Task 5.1.4
+Statement: Сколько рейсов из Анапы не летают в Москву?
+*/
+/*
+SQL №1
+Method: Простой запрос с использованием IN
+*/
+SELECT count(*)
+FROM dst_project.flights AS f
+WHERE f.departure_airport = 'AAQ'
+  AND f.arrival_airport NOT IN ('DME', 'SVO', 'VKO')
+--Result: 453
+------------------------------------------------
+
+/*
+Task 5.1.5
+Statement: Какая модель самолета летящего на рейсах из Анапы имеет больше всего мест?
+*/
+/*
+SQL №1
+Method: Запрос на иннер объединение таблиц с последующей группировкой по коду и ВС
+*/
+SELECT f.aircraft_code,
+       a.model,
+       count(DISTINCT s.seat_no) AS seat_count
+FROM dst_project.seats AS s
+JOIN dst_project.flights AS f ON s.aircraft_code = f.aircraft_code
+JOIN dst_project.aircrafts a ON f.aircraft_code = a.aircraft_code
+WHERE f.departure_airport = 'AAQ'
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT 1
+--Result: Boeing 737-300
+------------------------------------------------		
+		
+/*
+Task 6
+Statement: Формирование итогового датасета
+*/
+/*
+SQL №1
+Method: Использую подзапросы и лефт-объединения таблиц
+*/
+WITH fl AS
+  (SELECT f.flight_id AS fid,
+          f.departure_airport dep_air,
+          f.arrival_airport arr_air,
+          (date_part('hour', f.actual_arrival - f.actual_departure) * 60 + date_part('minute', f.actual_arrival - f.actual_departure)) fl_dur,
+          f.aircraft_code craft_code
+   FROM dst_project.flights f
+   WHERE f.departure_airport = 'AAQ'
+     AND (date_trunc('month', f.scheduled_departure) IN ('2017-01-01', '2017-02-01', '2016-12-01'))
+     AND f.status in ('Arrived') ),
+     tf AS
+  (SELECT t.flight_id AS fid,
+          count(t.ticket_no) pass_count,
+          sum(t.amount) rev
+   FROM dst_project.ticket_flights t
+   GROUP BY 1)
+SELECT fl.fid fl_id,
+       fl.dep_air,
+       fl.arr_air,
+       ac.model craft_model,
+       fl.fl_dur flight_duration,
+       tf.pass_count,
+       tf.rev flight_revenue
+FROM fl
+JOIN dst_project.aircrafts ac ON fl.craft_code = ac.aircraft_code
+LEFT JOIN tf ON tf.fid = fl.fid
+ORDER BY 1, 3
+--Result: Таблица, которую скачиваю в виде csv файла
